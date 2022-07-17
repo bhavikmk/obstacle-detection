@@ -85,13 +85,12 @@ int main (int argc, char** argv)
     std::cout << "starting enviroment" << std::endl;
 
     pcl::visualization::PCLVisualizer::Ptr viewer (new pcl::visualization::PCLVisualizer ("3D Viewer"));
-    simpleHighway(viewer);
+    // simpleHighway(viewer);
 
     ProcessPointClouds<pcl::PointXYZI>* pointProcessorI = new ProcessPointClouds<pcl::PointXYZI>();
-    pcl::PointCloud<pcl::PointXYZI>::Ptr inputCloud = pointProcessorI->loadPcd("../src/sensors/data/pcd/data_1/frame_0.pcd");
+    pcl::PointCloud<pcl::PointXYZI>::Ptr inputCloud = pointProcessorI->loadPcd("../data/pcd/data_2/0000000000.pcd");
 
-    // stream pcd using streampcd and boost 
-    std::vector<boost::filesystem::path> stream = pointProcessorI->streamPcd("../src/sensors/data/pcd/data_1");
+    std::vector<boost::filesystem::path> stream = pointProcessorI->streamPcd("../data/pcd/data_2");
 
     // create streamer 
     auto streamIterator = stream.begin();
@@ -103,13 +102,43 @@ int main (int argc, char** argv)
     while (!viewer->wasStopped ())
     {
         // remove all point clouds
+        
         viewer->removeAllPointClouds();
         viewer->removeAllShapes();
+
         // load and run obstacle detection process
 
         inputCloudI = pointProcessorI->loadPcd((*streamIterator).string());
         // cityBlock(viewer, pointProcessorI, inputCloud);
+        
+        // filter input cloud 
+        pcl::PointCloud<pcl::PointXYZI>::Ptr cloudFiltered = pointProcessorI->FilterCloud(inputCloudI, 0.3, Eigen::Vector4f (-20, -6, -2, 1), Eigen::Vector4f ( 30, 7, 5, 1));
+        
+        // segment cloud
+        std::pair<pcl::PointCloud<pcl::PointXYZI>::Ptr, pcl::PointCloud<pcl::PointXYZI>::Ptr> segmentCloud = pointProcessorI->SegmentPlane(cloudFiltered, 50, 0.3);
+        
+        // apply clustering in segmented cloud
+        std::vector<pcl::PointCloud<pcl::PointXYZI>::Ptr> clusters = pointProcessorI->Clustering(segmentCloud.second, 0.3, 10, 1000);
+        
+        // render clouds
         renderPointCloud(viewer,inputCloudI, "inputCloud");
+
+
+	    int clusterId = 0;
+	    std::vector<Color> colors = {Color(1,0,0), Color(1,1,0), Color(0,0,1)};
+        // render bounding box on cloud        
+        for(pcl::PointCloud<pcl::PointXYZI>::Ptr cluster : clusters)
+        {
+            // std::cout << "cluster size ";
+            // pointProcessorI->numPoints(cluster);
+            // renderPointCloud(viewer,cluster,"obstCloud"+std::to_string(clusterId),colors[clusterId%3]);
+
+            Box box = pointProcessorI->BoundingBox(cluster);
+            renderBox(viewer,box,clusterId);
+
+            ++clusterId;
+        }
+        
         // Increment to next scene and if the last scene is reached loop back to first scene
         streamIterator++;
         if(streamIterator == stream.end())
